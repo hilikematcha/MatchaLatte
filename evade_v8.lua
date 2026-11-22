@@ -11,7 +11,7 @@
 --  1) main.lua next to the script   2) your own copy on GitHub   3) the original repo   4) a CDN mirror
 --  5) the copy saved by an earlier successful run (zeroui_cache.lua)
 local LIB_URLS = {
-    "https://raw.githubusercontent.com/xvxvxvvcvxvvcxv/MatchaEvade/refs/heads/main/main.lua",
+    "https://raw.githubusercontent.com/jnoah7989-sketch/MatchaLatte/refs/heads/main/main.lua",
     "https://raw.githubusercontent.com/onlywraith/zero-inspired/refs/heads/main/main.lua",
     "https://cdn.jsdelivr.net/gh/onlywraith/zero-inspired@main/main.lua",
 }
@@ -157,7 +157,9 @@ end
 ----------------------------------------------------------------------
 -- 4. the menu
 ----------------------------------------------------------------------
-local win = Library:CreateWindow({
+local win, statusLabels -- created inside the menu block below, used by later sections
+do -- [section block]: keeps this part's local variables from piling up (Lua limit: 200)
+win = Library:CreateWindow({
     id = "evade_v8", title = "evade", subtitle = "v8", size = { 800, 620 }, columns = 2,
     toggleKey = "RSHIFT",
     config = "evade_v8.json", folder = "UI/evade_v8",
@@ -227,7 +229,7 @@ gC:AddButton({ text = "scan objects near me (stand next to a wisp)", callback = 
 gC:AddLabel({ text = "diagnostic saves evade_diag.txt in the Matcha workspace folder.", dim = true })
 
 local gS = tabMain:AddGroup("status", 2)
-local statusLabels = {}
+statusLabels = {}
 for i = 1, 6 do statusLabels[i] = gS:AddLabel({ text = "...", dim = true }) end
 
 -- ---- emote dash / bhop tab ----
@@ -343,6 +345,7 @@ tog(gSf, "sf_sky", "use the old sky point", false)
 
 win:AddSettingsTab() -- themes, configs, menu key, watermark, unload ...
 
+end -- [section block]
 ----------------------------------------------------------------------
 -- 5. key helpers
 ----------------------------------------------------------------------
@@ -623,6 +626,7 @@ end)
 ----------------------------------------------------------------------
 -- 8. emote dash
 ----------------------------------------------------------------------
+do -- [section block]: keeps this part's local variables from piling up (Lua limit: 200)
 -- Ctrl is held only for the short G -> slot sequence, then released.
 -- While the dash is ON, a separate loop taps Ctrl (or re-sends it in hold mode).
 local function runDash()
@@ -840,6 +844,7 @@ loop("strafe", function()
     wait(0.016)
 end)
 
+end -- [section block]
 ----------------------------------------------------------------------
 -- 11. bot esp (Drawing API + WorldToScreen), scanned by NAME
 ----------------------------------------------------------------------
@@ -1235,6 +1240,7 @@ end)
 ----------------------------------------------------------------------
 -- 13. auto revive
 ----------------------------------------------------------------------
+do -- [section block]: keeps this part's local variables from piling up (Lua limit: 200)
 -- A teammate counts as downed when ANY enabled check matches:
 --  attribute (names from the list) | any attribute containing "down"/"knock" | child value object | low health
 local rvNames, rvNamesSrc = {}, nil
@@ -2057,9 +2063,11 @@ runDiagnostic = function()
     say("Diagnostic running, takes a few seconds...")
 end
 
+end -- [section block]
 ----------------------------------------------------------------------
 -- 16. fullbright, watchdog, status
 ----------------------------------------------------------------------
+do -- [section block]: keeps this part's local variables from piling up (Lua limit: 200)
 -- Fullbright. Two parts:
 --  1) real lighting writes (re-applied every frame because Evade keeps changing the lighting). Each property is
 --     written separately and the first error text is shown in the status panel.
@@ -2222,6 +2230,13 @@ end
 fbConnect(RunService.RenderStepped)
 fbConnect(RunService.Heartbeat)
 
+-- called by stop(): disconnect, restore the lighting, remove the overlay
+RUN.fbShutdown = function()
+    for _, c in ipairs(RUN.fbConns or {}) do pcall(function() c:Disconnect() end) end
+    pcall(fbRestore)
+    if fbOverlay then pcall(function() fbOverlay:Remove() end); fbOverlay = nil end
+end
+
 -- when Roblox loses focus / closes, release every key we might hold
 local wasActive = true
 loop("watchdog", function()
@@ -2256,6 +2271,7 @@ loop("status", function()
     wait(0.5)
 end)
 
+end -- [section block]
 ----------------------------------------------------------------------
 -- 17. start / stop
 ----------------------------------------------------------------------
@@ -2281,9 +2297,7 @@ function RUN.stop()
             if hrp and weAnchored then hrp.Anchored = false end
         end)
     end
-    for _, c in ipairs(RUN.fbConns or {}) do pcall(function() c:Disconnect() end) end
-    pcall(fbRestore)
-    if fbOverlay then pcall(function() fbOverlay:Remove() end); fbOverlay = nil end
+    if RUN.fbShutdown then pcall(RUN.fbShutdown) end
 end
 
 Library:OnUnload(RUN.stop) -- unloading the menu also stops every loop and removes every drawing
