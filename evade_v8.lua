@@ -261,8 +261,11 @@ tog(gB, "bhop_moving", "only while holding w/a/s/d", false)
 -- ---- strafe tab ----
 local tabStrafe = win:AddTab("auto strafe", "evade")
 local gA = tabStrafe:AddGroup("auto strafe", 1)
+tog(gA, "strafe_auto", "hands-free sweep", false)
 tog(gA, "strafe_m2k", "mouse -> keys mode", false)
-sld(gA, "strafe_px", "keys->mouse strength", 1, 60, 5, " px")
+sld(gA, "strafe_px", "mouse strength", 1, 60, 5, " px")
+sld(gA, "strafe_sweep", "sweep time per side", 60, 500, 140, " ms")
+tog(gA, "strafe_needw", "hands-free needs W held", true)
 sld(gA, "strafe_thresh", "turn sensitivity", 5, 200, 25, " deg/s")
 sld(gA, "strafe_hold", "mouse->keys key hold", 20, 300, 80, " ms")
 tog(gA, "strafe_w", "mouse->keys also presses w", true)
@@ -271,6 +274,7 @@ tog(gA, "strafe_air", "only while in the air", false)
 tog(gA, "strafe_ramp", "ramp up while held", true)
 tog(gA, "strafe_menu_pause", "pause when menu is open", true)
 local gA2 = tabStrafe:AddGroup("how it works", 2)
+gA2:AddLabel({ text = "hands-free: sweeps the mouse left/right in a wave and holds A/D for you. Best with bhop; hold W.", dim = true })
 gA2:AddLabel({ text = "keys -> mouse: hold A and the mouse moves left, hold D and it moves right.", dim = true })
 gA2:AddLabel({ text = "mouse -> keys: turn the camera left and it holds A + W, turn right and it holds D + W.", dim = true })
 
@@ -308,11 +312,12 @@ tog(gR2, "rv_use_attr", "attribute with those names", true)
 tog(gR2, "rv_auto", "attr containing down/knock", true)
 tog(gR2, "rv_use_value", "child value object", true)
 tog(gR2, "rv_use_names", "child named down/revive", true)
-tog(gR2, "rv_use_ragdoll", "ragdolling (experimental)", false)
+tog(gR2, "rv_use_ragdoll", "ragdolling attribute", true)
+tog(gR2, "rv_use_lying", "lying on the ground", true)
 tog(gR2, "rv_use_health", "low health", false)
 sld(gR2, "rv_hp", "low health threshold", 0, 50, 1)
 tog(gR2, "rv_blind", "blind mode (any teammate)", false)
-tog(gR2, "rv_tp", "teleport to downed", false)
+tog(gR2, "rv_tp", "teleport to downed", true)
 tog(gR2, "rv_return", "teleport back after", true)
 sld(gR2, "rv_tpmax", "max teleport distance", 20, 2000, 400, " studs")
 
@@ -749,6 +754,7 @@ end)
 local lLx, lLz, lRx, lRz, lT = nil, nil, nil, nil, tick()
 local lastTurnT, lastTurnDir = 0, 0
 local heldDir, heldSince = 0, nil
+local sweepT0 = nil
 
 loop("strafe", function()
     local on = state.strafe and active() and getChar() ~= nil
@@ -762,6 +768,45 @@ loop("strafe", function()
     end
 
     local inv = cfg("strafe_invert")
+
+    -- HANDS-FREE: sweeps the mouse left/right in a smooth wave and holds the matching A/D key for you
+    -- (best together with bhop; hold W yourself)
+    if cfg("strafe_auto") then
+        if typing() or (cfg("strafe_menu_pause") and menuOpen()) or (cfg("strafe_needw") and not iskeypressed(VK_W)) then
+            strafeRelease()
+            sweepT0 = nil
+            wait(0.05)
+            return
+        end
+        local now = tick()
+        if not sweepT0 then sweepT0 = now end
+        local half = cfg("strafe_sweep") / 1000 -- time for one sweep to one side
+        local s = math.sin((now - sweepT0) * math.pi / half)
+        local mv = cfg("strafe_px") * s
+        if inv then mv = -mv end
+        if mv >= 0 then mv = math.floor(mv + 0.5) else mv = -math.floor(-mv + 0.5) end
+        if mv ~= 0 then mousemoverel(mv, 0) end
+        -- the key follows the sweep direction (dead zone so it does not flicker at the turn-around)
+        local want = nil
+        if s > 0.15 then
+            want = inv and VK_A or VK_D
+        elseif s < -0.15 then
+            want = inv and VK_D or VK_A
+        end
+        if want then
+            if strafeKey ~= want then
+                if strafeKey then rel(strafeKey) end
+                press(want)
+                strafeKey = want
+            end
+        elseif strafeKey then
+            rel(strafeKey)
+            strafeKey = nil
+        end
+        wait(0.016)
+        return
+    end
+    sweepT0 = nil
 
     if not cfg("strafe_m2k") then
         -- KEYS -> MOUSE (no keys are injected in this mode)
@@ -1364,6 +1409,14 @@ local function isDowned(char, plr)
     if cfg("rv_use_ragdoll") then
         local ok, v = pcall(function() return char:GetAttribute("Ragdolling") end)
         if ok and truthy(v) then return true, "ragdolling" end
+    end
+    if cfg("rv_use_lying") then
+        -- a downed character lies on the ground: its root part is no longer upright
+        local ok, up = pcall(function()
+            local r = char:FindFirstChild("HumanoidRootPart")
+            return r and r.CFrame.UpVector.Y
+        end)
+        if ok and up and up < 0.45 then return true, "lying down" end
     end
     if cfg("rv_use_health") then
         local ok, h = pcall(function() return char:FindFirstChild("Humanoid").Health end)
